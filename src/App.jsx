@@ -6,6 +6,7 @@ import FlowChart from './components/FlowChart';
 import AlertsPanel from './components/AlertsPanel';
 import EventLogTable from './components/EventLogTable';
 import SettingsModal from './components/SettingsModal';
+import ModelVisual from './components/ModelVisual';
 
 const INITIAL_SETTINGS = {
   halfFlushLiters: 2.5,
@@ -18,7 +19,7 @@ const INITIAL_SETTINGS = {
 
 const makeUnit = (id, name, locationLabel) => ({
   id, name, locationLabel,
-  isOccupied: false, occupiedSeconds: 0, isFlushing: false,
+  isOccupied: false, occupiedSeconds: 0, isFlushing: false, preFlushPending: false,
   currentFlowRate: 0, totalWaterLiters: 0, flushCount: 0,
   isLeaking: false, leakSeconds: 0, continuousFlowAlert: false,
   lastEventLabel: 'System initialized',
@@ -34,11 +35,12 @@ const createInitialHistory = () =>
   Array.from({ length: 20 }, (_, i) => ({ time: `-${20 - i}s`, totalFlow: 0, hasLeak: false }));
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('model');
   const [isSimRunning, setIsSimRunning] = useState(true);
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [units, setUnits] = useState(createInitialUnits);
+  const [selectedUnitId, setSelectedUnitId] = useState('U1');
   const [flowHistory, setFlowHistory] = useState(createInitialHistory);
   const [alerts, setAlerts] = useState([]);
   const [eventLog, setEventLog] = useState([{
@@ -101,7 +103,8 @@ export default function App() {
       if (u.id !== unitId) return u;
       addLog(u.id, u.name, mode === 'full' ? 'Full Flush' : 'Half Flush', `${reason} (${vol}L)`, vol, flow);
       return {
-        ...u, isFlushing: true, currentFlowRate: flow + (u.isLeaking ? settings.leakFlowRateLpm : 0),
+        ...u, isFlushing: true, preFlushPending: false,
+        currentFlowRate: flow + (u.isLeaking ? settings.leakFlowRateLpm : 0),
         totalWaterLiters: Number((u.totalWaterLiters + vol).toFixed(2)),
         flushCount: u.flushCount + 1, lastEventLabel: `${mode === 'full' ? 'Full' : 'Half'} Flush (${vol}L)`,
       };
@@ -111,19 +114,36 @@ export default function App() {
     }, 2500);
   };
 
+  const handleEnterStall = (unitId) => {
+    setUnits((p) => p.map((u) => u.id === unitId ? { ...u, isOccupied: true, occupiedSeconds: 0, preFlushPending: false, lastEventLabel: 'User entered stall' } : u));
+    const target = units.find((u) => u.id === unitId);
+    if (target) addLog(target.id, target.name, 'Occupancy Start', 'User entered stall', 0, 0);
+  };
+
+  const handleExitStall = (unitId) => {
+    const t = units.find((u) => u.id === unitId);
+    if (!t) return;
+    const dur = t.occupiedSeconds || 45;
+    const mode = dur >= settings.fullFlushDurationThreshold ? 'full' : 'half';
+
+    // Stage 2: Pre-flush delay state
+    setUnits((p) => p.map((u) => u.id === unitId ? { ...u, isOccupied: false, occupiedSeconds: 0, preFlushPending: true, lastEventLabel: 'Waiting for pre-flush delay' } : u));
+    addLog(t.id, t.name, 'Occupancy Exit', `User exited after ${dur}s (pre-flush wait)`, 0, 0);
+
+    setTimeout(() => {
+      if (settings.autoOccupancyFlush) {
+        triggerFlush(unitId, mode, `Auto-Flush after ${dur}s stay`);
+      } else {
+        setUnits((p) => p.map((u) => u.id === unitId ? { ...u, preFlushPending: false } : u));
+      }
+    }, 1200);
+  };
+
   const handleToggleOccupancy = (unitId) => {
     const t = units.find((u) => u.id === unitId);
     if (!t) return;
-    if (!t.isOccupied) {
-      setUnits((p) => p.map((u) => u.id === unitId ? { ...u, isOccupied: true, occupiedSeconds: 0, lastEventLabel: 'User entered stall' } : u));
-      addLog(t.id, t.name, 'Occupancy Start', 'User entered stall', 0, 0);
-    } else {
-      const dur = t.occupiedSeconds;
-      const mode = dur >= settings.fullFlushDurationThreshold ? 'full' : 'half';
-      setUnits((p) => p.map((u) => u.id === unitId ? { ...u, isOccupied: false, occupiedSeconds: 0 } : u));
-      addLog(t.id, t.name, 'Occupancy Exit', `User exited after ${dur}s`, 0, 0);
-      if (settings.autoOccupancyFlush) triggerFlush(unitId, mode, `Auto-Flush on Exit (${dur}s stay)`);
-    }
+    if (!t.isOccupied) handleEnterStall(unitId);
+    else handleExitStall(unitId);
   };
 
   const handleToggleLeak = (unitId) => {
@@ -151,17 +171,32 @@ export default function App() {
   const unreadAlertsCount = alerts.filter((a) => !a.acknowledged).length;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+    <div className="min-h-screen bg-[#03142D] text-white flex flex-col">
       <Navbar
         activeTab={activeTab} setActiveTab={setActiveTab}
         isSimRunning={isSimRunning} setIsSimRunning={setIsSimRunning}
         onResetSim={handleResetSim} unreadAlertsCount={unreadAlertsCount}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
-      <main className="max-w-7xl w-full mx-auto px-4 py-6 space-y-6 flex-1">
-        <OverviewCards units={units} activeAlertsCount={unreadAlertsCount} />
+      <main className="max-w-[1400px] w-full mx-auto px-4 lg:px-8 py-6 space-y-6 flex-1">
+        {(activeTab === 'home' || activeTab === 'model') && (
+          <ModelVisual
+            units={units}
+            selectedUnitId={selectedUnitId}
+            setSelectedUnitId={setSelectedUnitId}
+            settings={settings}
+            onEnterStall={handleEnterStall}
+            onExitStall={handleExitStall}
+            onManualFlush={(id, m) => triggerFlush(id, m, 'Manual flush')}
+            onToggleLeak={handleToggleLeak}
+            onFixValve={handleFixValve}
+            onResetSim={handleResetSim}
+          />
+        )}
+
         {activeTab === 'dashboard' && (
-          <>
+          <div className="space-y-6">
+            <OverviewCards units={units} activeAlertsCount={unreadAlertsCount} />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {units.map((u) => (
                 <ToiletUnitCard
@@ -173,8 +208,9 @@ export default function App() {
               ))}
             </div>
             <FlowChart units={units} flowHistory={flowHistory} />
-          </>
+          </div>
         )}
+
         {activeTab === 'alerts' && (
           <AlertsPanel
             alerts={alerts}
@@ -183,10 +219,12 @@ export default function App() {
             onClearResolved={() => setAlerts((p) => p.filter((a) => !a.acknowledged))}
           />
         )}
+
         {activeTab === 'history' && (
           <EventLogTable eventLog={eventLog} onClearLog={() => setEventLog([])} />
         )}
       </main>
+
       <SettingsModal
         isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)}
         settings={settings} defaultSettings={INITIAL_SETTINGS}

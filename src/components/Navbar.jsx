@@ -1,5 +1,5 @@
 import React from 'react';
-import { Droplets, ShieldAlert, Sliders, Activity, FileSpreadsheet, Play, Pause, RotateCcw } from 'lucide-react';
+import { Droplets, Sliders, Play, Pause, RotateCcw } from 'lucide-react';
 
 export default function Navbar({
   activeTab,
@@ -11,107 +11,115 @@ export default function Navbar({
   onOpenSettings
 }) {
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Activity },
-    { id: 'alerts', label: 'Alerts', icon: ShieldAlert, badge: unreadAlertsCount },
-    { id: 'history', label: 'Event Log & CSV', icon: FileSpreadsheet },
+    { id: 'home', label: 'Home' },
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'model', label: 'Model Visual' },
+    { id: 'alerts', label: 'Alerts', badge: unreadAlertsCount },
+    { id: 'history', label: 'Event Log & CSV' },
   ];
 
   return (
-    <header className="bg-slate-900 text-white shadow-md sticky top-0 z-30">
+    <header className="bg-[#03142D] text-white border-b border-cyan-500/20 sticky top-0 z-30 shadow-lg">
       {/* Honesty & Transparency Top Banner */}
-      <div className="bg-amber-500/20 border-b border-amber-500/30 px-4 py-1.5 text-center text-xs text-amber-200 flex items-center justify-center gap-2">
-        <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+      <div className="bg-[#071D3B] border-b border-cyan-500/20 px-4 py-1 text-center text-[11px] text-cyan-200/90 flex items-center justify-center gap-2">
+        <span className="inline-block w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
         <span>
-          <strong>Software Simulation Mode:</strong> All occupancy, flush, and water-flow values are mathematical simulations—not live hardware sensor claims.
+          <strong>Software Simulation Mode:</strong> Mathematical simulation only — no physical IoT sensors connected.
         </span>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        {/* Brand Title */}
+      <div className="max-w-[1400px] mx-auto px-4 lg:px-8 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+        {/* Left Brand + Eureka Junior Pill */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="bg-cyan-500/20 p-2 rounded-lg border border-cyan-400/30">
-              <Droplets className="w-6 h-6 text-cyan-400" />
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-9 h-9 rounded-full bg-cyan-500/10 border border-cyan-400/30 text-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.25)]">
+              <Droplets className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-bold text-lg tracking-tight text-white">Team Sankalp</h1>
-                <span className="text-[10px] font-semibold uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-0.5 rounded-full">
-                  Eureka Junior
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">
-                Smart Restroom Occupancy Flushing & Water-Flow Monitor
-              </p>
-            </div>
+            <span className="font-bold text-xl tracking-tight text-white">
+              Team Sankalp
+            </span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider bg-[#062c49] text-cyan-300 border border-cyan-400/40 px-3 py-1 rounded-full shadow-[0_0_10px_rgba(34,211,238,0.15)]">
+              EUREKA JUNIOR
+            </span>
           </div>
 
-          {/* Mobile Settings Button */}
-          <button
-            onClick={onOpenSettings}
-            className="md:hidden p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white border border-slate-700"
-            title="Simulation Settings"
-          >
-            <Sliders className="w-5 h-5" />
-          </button>
+          {/* Mobile Quick Controls */}
+          <div className="flex lg:hidden items-center gap-1.5">
+            <button
+              onClick={onResetSim}
+              className="p-1.5 rounded-lg bg-[#071D3B] text-slate-300 hover:text-white border border-cyan-500/20"
+              title="Reset Simulation"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+            <button
+              onClick={onOpenSettings}
+              className="p-1.5 rounded-lg bg-[#071D3B] text-slate-300 hover:text-white border border-cyan-500/20"
+              title="Simulation Thresholds"
+            >
+              <Sliders className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
-        {/* Simulation Controls & Navigation */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          {/* Navigation Tabs */}
-          <nav className="flex items-center bg-slate-800/80 p-1 rounded-lg border border-slate-700/80 overflow-x-auto">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors relative ${
-                    isActive
-                      ? 'bg-cyan-600 text-white shadow-sm'
-                      : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{item.label}</span>
-                  {item.badge > 0 && (
-                    <span className="ml-1 px-1.5 py-0.2 bg-rose-500 text-white text-[10px] font-bold rounded-full">
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+        {/* Center Navigation Links with Cyan Underline */}
+        <nav className="flex items-center gap-1 sm:gap-5 overflow-x-auto no-scrollbar border-b lg:border-b-0 border-slate-800 pb-1 lg:pb-0">
+          {navItems.map((item) => {
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={`relative px-2.5 py-2 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+                  isActive
+                    ? 'text-cyan-400 font-semibold'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                <span>{item.label}</span>
+                {item.badge > 0 && (
+                  <span className="px-1.5 py-0.2 bg-rose-500 text-white text-[10px] font-bold rounded-full">
+                    {item.badge}
+                  </span>
+                )}
+                {isActive && (
+                  <span className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-cyan-400 rounded-full shadow-[0_0_8px_#22d3ee]" />
+                )}
+              </button>
+            );
+          })}
+        </nav>
 
-          {/* Auto-Simulation Clock & Settings Controls */}
-          <div className="flex items-center gap-1.5">
+        {/* Right Subtitle + Sim Controls */}
+        <div className="hidden lg:flex items-center gap-4">
+          <p className="text-xs text-slate-300/90 leading-tight text-right max-w-[230px]">
+            Smart Restroom Occupancy Flushing &amp; Water-Flow Monitor
+          </p>
+          <div className="flex items-center gap-1.5 border-l border-slate-700/80 pl-3">
             <button
               onClick={() => setIsSimRunning(!isSimRunning)}
               className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                 isSimRunning
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                  : 'bg-slate-800 text-slate-300 border-slate-700'
+                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                  : 'bg-[#071D3B] text-slate-300 border-cyan-500/20'
               }`}
+              title="Pause or Resume 1s Simulation Clock"
             >
               {isSimRunning ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-              <span>{isSimRunning ? 'Sim Active' : 'Sim Paused'}</span>
+              <span>{isSimRunning ? 'Live' : 'Paused'}</span>
             </button>
-
             <button
               onClick={onResetSim}
-              className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white border border-slate-700"
+              className="p-1.5 rounded-lg bg-[#071D3B] text-slate-300 hover:text-white border border-cyan-500/20"
               title="Reset All Simulated Readings"
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw className="w-3.5 h-3.5" />
             </button>
-
             <button
               onClick={onOpenSettings}
-              className="hidden md:flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#071D3B] text-slate-300 hover:text-white border border-cyan-500/20 text-xs font-medium"
             >
-              <Sliders className="w-3.5 h-3.5" />
+              <Sliders className="w-3.5 h-3.5 text-cyan-400" />
               <span>Thresholds</span>
             </button>
           </div>
