@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Navbar from './components/Navbar';
 import OverviewCards from './components/OverviewCards';
 import ToiletUnitCard from './components/ToiletUnitCard';
@@ -9,26 +9,22 @@ import SettingsModal from './components/SettingsModal';
 import ModelVisual from './components/ModelVisual';
 
 const INITIAL_SETTINGS = {
-  halfFlushLiters: 2.5,
-  fullFlushLiters: 4.5,
-  fullFlushDurationThreshold: 60,
-  leakFlowRateLpm: 3.6,
-  leakAlertDelaySeconds: 10,
-  autoOccupancyFlush: true,
+  halfFlushLiters: 2.5, fullFlushLiters: 4.5,
+  fullFlushDurationThreshold: 60, leakFlowRateLpm: 3.6,
+  leakAlertDelaySeconds: 10, autoOccupancyFlush: true,
 };
 
-const makeUnit = (id, name, locationLabel) => ({
-  id, name, locationLabel,
-  isOccupied: false, occupiedSeconds: 0, isFlushing: false, preFlushPending: false,
-  currentFlowRate: 0, totalWaterLiters: 0, flushCount: 0,
-  isLeaking: false, leakSeconds: 0, continuousFlowAlert: false,
-  lastEventLabel: 'System initialized',
+const makeUnit = (id, name, locationLabel, occ = false) => ({
+  id, name, locationLabel, isOccupied: occ, occupiedSeconds: occ ? 12 : 0,
+  preFlushPending: false, isFlushing: false, currentFlowRate: 0,
+  totalWaterLiters: 0, flushCount: 0, isLeaking: false, leakSeconds: 0,
+  continuousFlowAlert: false, lastEventLabel: occ ? 'User entered stall' : 'Ready',
 });
 
 const createInitialUnits = () => [
-  makeUnit('U1', 'Toilet Unit 1', 'Block A • Ground Floor (Stall 1)'),
-  makeUnit('U2', 'Toilet Unit 2', 'Block A • Ground Floor (Stall 2)'),
-  makeUnit('U3', 'Toilet Unit 3', 'Block B • Accessible Stall'),
+  makeUnit('U1', 'Toilet Unit 1', 'School Block A', true),
+  makeUnit('U2', 'Toilet Unit 2', 'School Block A', false),
+  makeUnit('U3', 'Toilet Unit 3', 'School Block B', false),
 ];
 
 const createInitialHistory = () =>
@@ -36,13 +32,14 @@ const createInitialHistory = () =>
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('model');
+  const [selectedUnitId, setSelectedUnitId] = useState('U1');
   const [isSimRunning, setIsSimRunning] = useState(true);
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [units, setUnits] = useState(createInitialUnits);
-  const [selectedUnitId, setSelectedUnitId] = useState('U1');
   const [flowHistory, setFlowHistory] = useState(createInitialHistory);
   const [alerts, setAlerts] = useState([]);
+  const timersRef = useRef([]);
   const [eventLog, setEventLog] = useState([{
     id: 'EVT-INIT', timestamp: new Date().toLocaleTimeString(),
     unitId: 'SYSTEM', unitName: 'All Units', type: 'System Ready',
@@ -50,48 +47,43 @@ export default function App() {
     volumeLiters: 0, flowRateLpm: 0,
   }]);
 
-  const addLog = (unitId, unitName, type, details, volumeLiters = 0, flowRateLpm = 0) => {
-    setEventLog((prev) => [{
+  const clearAllTimers = () => {
+    timersRef.current.forEach((t) => clearTimeout(t));
+    timersRef.current = [];
+  };
+
+  const addLog = (unitId, unitName, type, details, vol = 0, flow = 0) => {
+    setEventLog((p) => [{
       id: `EVT-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-      timestamp: new Date().toLocaleTimeString(),
-      unitId, unitName, type, details,
-      volumeLiters: Number(volumeLiters.toFixed(2)),
-      flowRateLpm: Number(flowRateLpm.toFixed(1)),
-    }, ...prev.slice(0, 199)]);
+      timestamp: new Date().toLocaleTimeString(), unitId, unitName, type, details,
+      volumeLiters: Number(vol.toFixed(2)), flowRateLpm: Number(flow.toFixed(1)),
+    }, ...p.slice(0, 199)]);
   };
 
   useEffect(() => {
     if (!isSimRunning) return;
     const timer = setInterval(() => {
-      setUnits((prevUnits) => {
-        const nextUnits = prevUnits.map((unit) => {
-          let u = { ...unit };
-          if (u.isOccupied) u.occupiedSeconds += 1;
-          if (u.isLeaking) {
-            u.leakSeconds += 1;
-            u.totalWaterLiters = Number((u.totalWaterLiters + settings.leakFlowRateLpm / 60).toFixed(2));
-            u.currentFlowRate = u.isFlushing ? 18.0 + settings.leakFlowRateLpm : settings.leakFlowRateLpm;
-            if (u.leakSeconds >= settings.leakAlertDelaySeconds && !u.continuousFlowAlert) {
-              u.continuousFlowAlert = true;
-              u.lastEventLabel = 'Continuous flow alert!';
-              const msg = `Abnormal continuous flow (${settings.leakFlowRateLpm} L/min) for ${settings.leakAlertDelaySeconds}s.`;
-              setAlerts((p) => [{
-                id: `ALT-${Date.now()}-${u.id}`, timestamp: new Date().toLocaleTimeString(),
-                unitId: u.id, unitName: u.name, severity: 'High', message: msg, acknowledged: false,
-              }, ...p]);
-              addLog(u.id, u.name, 'Leak Alert', msg, 0, settings.leakFlowRateLpm);
-            }
+      setUnits((prev) => prev.map((u) => {
+        let x = { ...u };
+        if (x.isOccupied) x.occupiedSeconds += 1;
+        if (x.isLeaking) {
+          x.leakSeconds += 1;
+          x.totalWaterLiters = Number((x.totalWaterLiters + settings.leakFlowRateLpm / 60).toFixed(2));
+          x.currentFlowRate = x.isFlushing ? 18.0 + settings.leakFlowRateLpm : settings.leakFlowRateLpm;
+          if (x.leakSeconds >= settings.leakAlertDelaySeconds && !x.continuousFlowAlert) {
+            x.continuousFlowAlert = true;
+            x.lastEventLabel = 'Continuous flow alert!';
+            setAlerts((p) => [{
+              id: `ALT-${Date.now()}-${x.id}`, timestamp: new Date().toLocaleTimeString(),
+              unitId: x.id, unitName: x.name, severity: 'High',
+              message: `Abnormal flow (${settings.leakFlowRateLpm} L/min) for ${settings.leakAlertDelaySeconds}s.`,
+              acknowledged: false,
+            }, ...p]);
+            addLog(x.id, x.name, 'Leak Alert', 'Abnormal flow detected', 0, settings.leakFlowRateLpm);
           }
-          return u;
-        });
-        const combined = nextUnits.reduce((s, u) => s + u.currentFlowRate, 0);
-        setFlowHistory((p) => [...p.slice(1), {
-          time: new Date().toLocaleTimeString([], { minute: '2-digit', second: '2-digit' }),
-          totalFlow: Number(combined.toFixed(1)),
-          hasLeak: nextUnits.some((u) => u.isLeaking),
-        }]);
-        return nextUnits;
-      });
+        }
+        return x;
+      }));
     }, 1000);
     return () => clearInterval(timer);
   }, [isSimRunning, settings]);
@@ -99,79 +91,62 @@ export default function App() {
   const triggerFlush = (unitId, mode, reason) => {
     const vol = mode === 'full' ? settings.fullFlushLiters : settings.halfFlushLiters;
     const flow = mode === 'full' ? 22.0 : 15.0;
-    setUnits((p) => p.map((u) => {
-      if (u.id !== unitId) return u;
-      addLog(u.id, u.name, mode === 'full' ? 'Full Flush' : 'Half Flush', `${reason} (${vol}L)`, vol, flow);
-      return {
-        ...u, isFlushing: true, preFlushPending: false,
-        currentFlowRate: flow + (u.isLeaking ? settings.leakFlowRateLpm : 0),
-        totalWaterLiters: Number((u.totalWaterLiters + vol).toFixed(2)),
-        flushCount: u.flushCount + 1, lastEventLabel: `${mode === 'full' ? 'Full' : 'Half'} Flush (${vol}L)`,
-      };
-    }));
-    setTimeout(() => {
-      setUnits((p) => p.map((u) => u.id === unitId ? { ...u, isFlushing: false, currentFlowRate: u.isLeaking ? settings.leakFlowRateLpm : 0 } : u));
-    }, 2500);
+    setUnits((p) => p.map((u) => u.id === unitId ? {
+      ...u, preFlushPending: false, isFlushing: true,
+      currentFlowRate: flow + (u.isLeaking ? settings.leakFlowRateLpm : 0),
+      totalWaterLiters: Number((u.totalWaterLiters + vol).toFixed(2)),
+      flushCount: u.flushCount + 1, lastEventLabel: `${mode} flush (${vol}L)`,
+    } : u));
+    addLog(unitId, 'Unit', mode === 'full' ? 'Full Flush' : 'Half Flush', reason, vol, flow);
+    const tid = setTimeout(() => {
+      setUnits((p) => p.map((u) => u.id === unitId ? {
+        ...u, isFlushing: false, currentFlowRate: u.isLeaking ? settings.leakFlowRateLpm : 0,
+        lastEventLabel: 'Ready',
+      } : u));
+    }, 2600);
+    timersRef.current.push(tid);
   };
 
-  const handleEnterStall = (unitId) => {
-    setUnits((p) => p.map((u) => u.id === unitId ? { ...u, isOccupied: true, occupiedSeconds: 0, preFlushPending: false, lastEventLabel: 'User entered stall' } : u));
-    const target = units.find((u) => u.id === unitId);
-    if (target) addLog(target.id, target.name, 'Occupancy Start', 'User entered stall', 0, 0);
+  const handleEnter = (id) => {
+    setUnits((p) => p.map((u) => u.id === id ? { ...u, isOccupied: true, occupiedSeconds: 0, preFlushPending: false } : u));
+    addLog(id, 'Unit', 'Occupancy', 'User entered stall', 0, 0);
   };
 
-  const handleExitStall = (unitId) => {
-    const t = units.find((u) => u.id === unitId);
-    if (!t) return;
-    const dur = t.occupiedSeconds || 45;
+  const handleExit = (id) => {
+    const t = units.find((u) => u.id === id);
+    if (!t || !t.isOccupied) return;
+    const dur = t.occupiedSeconds;
     const mode = dur >= settings.fullFlushDurationThreshold ? 'full' : 'half';
-
-    // Stage 2: Pre-flush delay state
-    setUnits((p) => p.map((u) => u.id === unitId ? { ...u, isOccupied: false, occupiedSeconds: 0, preFlushPending: true, lastEventLabel: 'Waiting for pre-flush delay' } : u));
-    addLog(t.id, t.name, 'Occupancy Exit', `User exited after ${dur}s (pre-flush wait)`, 0, 0);
-
-    setTimeout(() => {
-      if (settings.autoOccupancyFlush) {
-        triggerFlush(unitId, mode, `Auto-Flush after ${dur}s stay`);
-      } else {
-        setUnits((p) => p.map((u) => u.id === unitId ? { ...u, preFlushPending: false } : u));
-      }
-    }, 1200);
+    setUnits((p) => p.map((u) => u.id === id ? { ...u, isOccupied: false, occupiedSeconds: 0, preFlushPending: settings.autoOccupancyFlush } : u));
+    addLog(id, 'Unit', 'Exit', `User exited after ${dur}s`, 0, 0);
+    if (settings.autoOccupancyFlush) {
+      const tid = setTimeout(() => triggerFlush(id, mode, `Auto-flush (${dur}s stay)`), 1600);
+      timersRef.current.push(tid);
+    }
   };
 
-  const handleToggleOccupancy = (unitId) => {
-    const t = units.find((u) => u.id === unitId);
-    if (!t) return;
-    if (!t.isOccupied) handleEnterStall(unitId);
-    else handleExitStall(unitId);
+  const handleToggleLeak = (id) => {
+    setUnits((p) => p.map((u) => u.id === id ? { ...u, isLeaking: true, leakSeconds: 0, currentFlowRate: settings.leakFlowRateLpm } : u));
+    addLog(id, 'Unit', 'Leak', 'Simulated leak started', 0, settings.leakFlowRateLpm);
   };
 
-  const handleToggleLeak = (unitId) => {
-    const t = units.find((u) => u.id === unitId);
-    if (!t) return;
-    setUnits((p) => p.map((u) => u.id === unitId ? { ...u, isLeaking: true, leakSeconds: 0, currentFlowRate: settings.leakFlowRateLpm, lastEventLabel: 'Simulated valve leak started' } : u));
-    addLog(t.id, t.name, 'Anomaly Injected', `Simulated leak started (${settings.leakFlowRateLpm} L/min)`, 0, settings.leakFlowRateLpm);
-  };
-
-  const handleFixValve = (unitId) => {
-    const t = units.find((u) => u.id === unitId);
-    if (!t) return;
-    setUnits((p) => p.map((u) => u.id === unitId ? { ...u, isLeaking: false, leakSeconds: 0, continuousFlowAlert: false, currentFlowRate: u.isFlushing ? 15.0 : 0, lastEventLabel: 'Leak resolved' } : u));
-    setAlerts((p) => p.map((a) => a.unitId === unitId ? { ...a, acknowledged: true } : a));
-    addLog(t.id, t.name, 'Maintenance', 'Simulated valve leak resolved', 0, 0);
+  const handleFixValve = (id) => {
+    setUnits((p) => p.map((u) => u.id === id ? { ...u, isLeaking: false, leakSeconds: 0, continuousFlowAlert: false, currentFlowRate: 0 } : u));
+    setAlerts((p) => p.map((a) => a.unitId === id ? { ...a, acknowledged: true } : a));
+    addLog(id, 'Unit', 'Repair', 'Leak resolved', 0, 0);
   };
 
   const handleResetSim = () => {
+    clearAllTimers();
     setUnits(createInitialUnits());
     setFlowHistory(createInitialHistory());
     setAlerts([]);
-    addLog('SYSTEM', 'All Units', 'Simulation Reset', 'All counters reset to zero', 0, 0);
   };
 
   const unreadAlertsCount = alerts.filter((a) => !a.acknowledged).length;
 
   return (
-    <div className="min-h-screen bg-[#03142D] text-white flex flex-col">
+    <div className="min-h-screen bg-[#020c1b] text-slate-900 flex flex-col">
       <Navbar
         activeTab={activeTab} setActiveTab={setActiveTab}
         isSimRunning={isSimRunning} setIsSimRunning={setIsSimRunning}
@@ -179,29 +154,22 @@ export default function App() {
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
       <main className="max-w-[1400px] w-full mx-auto px-4 lg:px-8 py-6 space-y-6 flex-1">
-        {(activeTab === 'home' || activeTab === 'model') && (
+        {(activeTab === 'model' || activeTab === 'home') && (
           <ModelVisual
-            units={units}
-            selectedUnitId={selectedUnitId}
-            setSelectedUnitId={setSelectedUnitId}
-            settings={settings}
-            onEnterStall={handleEnterStall}
-            onExitStall={handleExitStall}
+            units={units} selectedUnitId={selectedUnitId} setSelectedUnitId={setSelectedUnitId}
+            settings={settings} onEnterStall={handleEnter} onExitStall={handleExit}
             onManualFlush={(id, m) => triggerFlush(id, m, 'Manual flush')}
-            onToggleLeak={handleToggleLeak}
-            onFixValve={handleFixValve}
-            onResetSim={handleResetSim}
+            onToggleLeak={handleToggleLeak} onFixValve={handleFixValve} onResetSim={handleResetSim}
           />
         )}
-
         {activeTab === 'dashboard' && (
-          <div className="space-y-6">
+          <div className="space-y-6 bg-slate-50 p-4 sm:p-6 rounded-2xl">
             <OverviewCards units={units} activeAlertsCount={unreadAlertsCount} />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {units.map((u) => (
                 <ToiletUnitCard
                   key={u.id} unit={u} settings={settings}
-                  onToggleOccupancy={handleToggleOccupancy}
+                  onToggleOccupancy={(id) => u.isOccupied ? handleExit(id) : handleEnter(id)}
                   onManualFlush={(id, m) => triggerFlush(id, m, 'Manual flush')}
                   onToggleLeak={handleToggleLeak} onFixValve={handleFixValve}
                 />
@@ -210,25 +178,24 @@ export default function App() {
             <FlowChart units={units} flowHistory={flowHistory} />
           </div>
         )}
-
         {activeTab === 'alerts' && (
-          <AlertsPanel
-            alerts={alerts}
-            onAcknowledge={(id) => setAlerts((p) => p.map((a) => a.id === id ? { ...a, acknowledged: true } : a))}
-            onFixValve={handleFixValve}
-            onClearResolved={() => setAlerts((p) => p.filter((a) => !a.acknowledged))}
-          />
+          <div className="bg-slate-50 p-4 sm:p-6 rounded-2xl">
+            <AlertsPanel
+              alerts={alerts} onAcknowledge={(id) => setAlerts((p) => p.map((a) => a.id === id ? { ...a, acknowledged: true } : a))}
+              onFixValve={handleFixValve} onClearResolved={() => setAlerts((p) => p.filter((a) => !a.acknowledged))}
+            />
+          </div>
         )}
-
         {activeTab === 'history' && (
-          <EventLogTable eventLog={eventLog} onClearLog={() => setEventLog([])} />
+          <div className="bg-slate-50 p-4 sm:p-6 rounded-2xl">
+            <EventLogTable eventLog={eventLog} onClearLog={() => setEventLog([])} />
+          </div>
         )}
       </main>
-
       <SettingsModal
         isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)}
         settings={settings} defaultSettings={INITIAL_SETTINGS}
-        onSaveSettings={(s) => { setSettings(s); addLog('SYSTEM', 'All Units', 'Settings Updated', 'Thresholds updated', 0, 0); }}
+        onSaveSettings={(s) => setSettings(s)}
       />
     </div>
   );
