@@ -63,7 +63,8 @@ export default function App() {
   useEffect(() => {
     if (!isSimRunning) return;
     const timer = setInterval(() => {
-      setUnits((prev) => prev.map((u) => {
+      setUnits((prev) => {
+        const nextUnits = prev.map((u) => {
         let x = { ...u };
         if (x.isOccupied) x.occupiedSeconds += 1;
         if (x.isLeaking) {
@@ -83,7 +84,19 @@ export default function App() {
           }
         }
         return x;
-      }));
+        });
+        const combined = nextUnits.reduce((sum, u) => sum + (Number(u.currentFlowRate) || 0), 0);
+        const anyLeak = nextUnits.some((u) => u.isLeaking || u.continuousFlowAlert);
+        setFlowHistory((prevHist) => [
+          ...prevHist.slice(-19),
+          {
+            time: new Date().toLocaleTimeString([], { minute: "2-digit", second: "2-digit" }),
+            totalFlow: Number(combined.toFixed(1)),
+            hasLeak: anyLeak,
+          },
+        ]);
+        return nextUnits;
+      });
     }, 1000);
     return () => clearInterval(timer);
   }, [isSimRunning, settings]);
